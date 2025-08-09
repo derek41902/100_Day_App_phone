@@ -1,0 +1,1377 @@
+<!--
+  File: hundred-day-tracker.html
+  Single-file, offline 100-day self-improvement tracker
+  Author: ChatGPT (expert web engineer & product designer)
+  Notes:
+   - No external assets. Everything is inline (HTML/CSS/JS).
+   - Data is autosaved to localStorage and can be exported/imported as JSON.
+   - Stores weights/loads internally in kg; converts for UI if unitIsImperial=true.
+   - Minimal custom chart renderer (Canvas) for body weight and workout trends.
+   - Accessible (keyboardable), responsive, light/dark aware, with subtle animations.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>HundredDay — 100-Day Self-Improvement Tracker</title>
+<style>
+  :root{
+    --bg: #ffffff;
+    --text:#0b1220;
+    --muted:#6b7280;
+    --card:#f8fafc;
+    --border:#e5e7eb;
+    --accent:#0f2744; /* deep navy */
+    --accent-2:#39c6aa; /* mint */
+    --good:#10b981; --warn:#f59e0b; --bad:#ef4444;
+    --ring-bg:#e6edf5;
+    --shadow:0 1px 2px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.06);
+    --radius:14px;
+    --focus: 0 0 0 3px rgba(57,198,170,.35);
+  }
+  /* Alternative accent theme (plum + teal), toggled by [data-theme="plum-teal"] on body */
+  body[data-theme="plum-teal"]{
+    --accent:#4b1d4a;
+    --accent-2:#2bb0a6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root{
+      --bg:#0b1220; --text:#e5e7eb; --muted:#9aa0aa; --card:#0f172a; --border:#1f2937;
+      --ring-bg:#142033; --shadow:0 1px 2px rgba(0,0,0,.35), 0 8px 20px rgba(0,0,0,.25);
+    }
+  }
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--text);font:500 16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,system-ui,"Helvetica Neue",Arial,"Apple Color Emoji","Segoe UI Emoji";
+  }
+  .app{
+    max-width:1200px;min-width:900px;margin:24px auto;padding:0 20px 60px;
+  }
+  header{
+    display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;
+  }
+  .brand{display:flex;gap:12px;align-items:center}
+  .logo{
+    width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    box-shadow:var(--shadow)
+  }
+  .title{font-weight:800;letter-spacing:.2px}
+  nav{
+    display:flex;gap:8px;flex-wrap:wrap
+  }
+  .tab{
+    border:1px solid var(--border);background:var(--card);padding:10px 14px;border-radius:10px;cursor:pointer;
+    transition:.18s transform,.18s background; user-select:none; color: #e6edf3; /* light text color */
+  }
+  .tab[aria-selected="true"]{background:linear-gradient(180deg,rgba(57,198,170,.15),transparent);border-color:var(--accent-2);outline:none}
+  .tab:focus-visible{box-shadow:var(--focus)}
+  main .panel{display:none}
+  main .panel[aria-hidden="false"]{display:block;animation:fade .18s ease-out}
+  @keyframes fade{from{opacity:.0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+  /* Cards and layout */
+  .grid{display:grid;gap:16px}
+  .g-2{grid-template-columns:1fr 1fr}
+  .g-3{grid-template-columns:1.1fr 1fr 1fr}
+  .card{
+    background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)
+  }
+  .card h3{margin:0 0 8px 0;font-size:15px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em}
+  .muted{color:var(--muted)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .spacer{flex:1}
+  .btn{
+    background:var(--accent);color:#fff;border:0;border-radius:12px;padding:10px 14px;cursor:pointer;font-weight:700;box-shadow:var(--shadow);
+    transition:transform .06s ease-in-out, opacity .2s
+  }
+  .btn.secondary{background:var(--accent-2);color:#09231e}
+  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .btn:active{transform:translateY(1px)}
+  .btn:focus-visible{outline:none;box-shadow:var(--focus)}
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .seg button{border:0;background:transparent;padding:8px 12px;cursor:pointer;     color: #e6edf3; /* light text color */}
+  .seg button[aria-pressed="true"]{background:var(--ring-bg)}
+  label{font-size:13px;color:var(--muted)}
+  input,select,textarea{
+    width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--text)
+  }
+  input[type="checkbox"]{width:auto}
+  input[type="date"],input[type="datetime-local"]{min-height:40px}
+  .mini{
+    font-size:12px;color:var(--muted)
+  }
+
+  /* Progress ring */
+  .ring-wrap{position:relative;display:inline-block}
+  .ring{
+    width:160px;height:160px;transform:rotate(-90deg)
+  }
+  .ring text{transform:rotate(90deg)}
+  .ring-center{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;
+    font-weight:800
+  }
+  .ring-center small{color:var(--muted);font-weight:600}
+  .bar{height:10px;background:var(--ring-bg);border-radius:999px;overflow:hidden}
+  .bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent-2),var(--accent));width:0%}
+
+  /* Toggles */
+  .toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+  .toggle input{display:none}
+  .toggle .track{width:44px;height:26px;background:var(--ring-bg);border:1px solid var(--border);border-radius:999px;position:relative;transition:.2s}
+  .toggle .thumb{
+    width:20px;height:20px;background:var(--bg);border:1px solid var(--border);border-radius:50%;position:absolute;top:2px;left:2px;transition:transform .18s, background .18s
+  }
+  .toggle input:checked + .track{background:linear-gradient(90deg,var(--accent-2),var(--accent))}
+  .toggle input:checked + .track .thumb{transform:translateX(18px);background:#fff}
+
+  /* Prompt card */
+  .prompt{padding:14px;border-radius:12px;border:1px dashed var(--accent-2);background:linear-gradient(180deg,rgba(57,198,170,.09),transparent);font-weight:650}
+
+  /* Toast */
+  .toast{
+    position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(16px);opacity:0;
+    background:#0d1b2a;color:#fff;border-radius:12px;padding:10px 14px;box-shadow:var(--shadow);
+    transition:.22s ease;z-index:20
+  }
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+  .kbd{font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--ring-bg);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:12px}
+
+  /* Print summary */
+  @media print{
+    header,nav,.no-print{display:none!important}
+    body{background:#fff;color:#000}
+    .card{box-shadow:none;border:0;padding:0}
+    .panel{display:block!important}
+  }
+
+  /* Small confetti celebration when day reaches 100 */
+  .confetti {
+    position: fixed; inset:0; pointer-events:none; overflow:hidden; z-index: 9999;
+  }
+  .confetti i{
+    position:absolute;width:8px;height:14px;opacity:0;animation: fall 1400ms ease-in forwards;
+    border-radius:2px
+  }
+  @keyframes fall{
+    0%{transform:translateY(-20vh) rotate(0);opacity:0}
+    10%{opacity:1}
+    100%{transform:translateY(110vh) rotate(540deg);opacity:0}
+  }
+</style>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1a2a25">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" sizes="192x192" href="icons/icon-192.png">
+  <link rel="icon" sizes="512x512" href="icons/icon-512.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <style>
+  /* ===== iPhone 14 optimizations ===== */
+  :root{
+    --tap: 44px;        /* Apple HIG min tap size */
+    --pad: 14px;
+    --pad-lg: 18px;
+  }
+  html, body { height: 100%; }
+  body {
+    min-height: 100dvh;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0) + 12px);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior-y: none;
+  }
+  @media (max-width: 430px){
+    .app{ min-width: auto !important; margin: 0 auto; padding: 0 var(--pad) calc(env(safe-area-inset-bottom, 0) + 16px) !important; }
+    header{ padding: var(--pad) 0 6px 0; position: sticky; top: 0; z-index: 10; background: var(--bg); }
+    .grid { grid-template-columns: 1fr !important; }
+    .g-2, .g-3 { grid-template-columns: 1fr !important; }
+    .card{ padding: var(--pad-lg); border-radius: 14px; }
+    .row { flex-wrap: wrap; gap: 8px; }
+  }
+  /* Tabs: larger hit area, horizontal scroll when overflowing */
+  nav[role="tablist"]{ display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .tab  { min-height: var(--tap); padding: 10px 14px; white-space: nowrap; font-size: 15px; }
+  .tab:focus-visible { outline-offset: 3px; }
+  /* Buttons: bigger tap targets, full width on phone where appropriate */
+  .btn { min-height: var(--tap); padding: 0 14px; font-size: 16px; }
+  @media (max-width: 430px){
+    .btn.block, .row .btn { width: 100%; }
+  }
+  /* Inputs avoid zoom (>=16px) */
+  input, select, textarea { font-size: 16px; min-height: var(--tap); }
+  /* Ensure bottom content isn’t obscured by home indicator */
+  .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom, 0) + 10px); }
+  </style>
+
+</head>
+<body>
+<div class="app" id="app" aria-live="polite">
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <div class="title">HundredDay</div>
+        <div class="mini">100-day challenge — track Workout, Prayer, Journaling</div>
+      </div>
+    </div>
+    <nav role="tablist" aria-label="Primary">
+      <button class="tab" role="tab" aria-selected="true" aria-controls="panel-dashboard" id="tab-dashboard">Dashboard</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="panel-log" id="tab-log">Log</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="panel-progress" id="tab-progress">Progress</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="panel-summary" id="tab-summary">Summary</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="panel-settings" id="tab-settings">Settings</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- DASHBOARD -->
+    <section class="panel grid g-3" id="panel-dashboard" role="tabpanel" aria-hidden="false" aria-labelledby="tab-dashboard">
+      <div class="card" id="card-100day">
+        <h3>100-Day Progress</h3>
+        <div class="row" style="gap:18px;align-items:center">
+          <div class="ring-wrap" aria-label="100-day progress ring">
+            <svg class="ring" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="52" stroke="var(--ring-bg)" stroke-width="12" fill="none"/>
+              <circle id="ring-arc" cx="60" cy="60" r="52" stroke="url(#grad)" stroke-linecap="round" stroke-width="12" fill="none" stroke-dasharray="0 999"/>
+              <defs>
+                <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="var(--accent-2)"/>
+                  <stop offset="100%" stop-color="var(--accent)"/>
+                </linearGradient>
+              </defs>
+            </svg>
+            <div class="ring-center">
+              <div><span id="day-count" style="font-size:28px">0</span><span style="font-weight:700">/100</span></div>
+              <small id="day-label">Day 0</small>
+            </div>
+          </div>
+          <div style="min-width:240px;flex:1">
+            <div class="row">
+              <div>
+                <div class="mini">Start date</div>
+                <div id="start-date-label" style="font-weight:700"></div>
+              </div>
+              <div class="spacer"></div>
+              <button class="btn block ghost no-print" id="quick-today">Today</button>
+            </div>
+            <div class="mini" id="days-remaining"></div>
+            <div class="mini" id="week-span"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>This Week — Progress to 4</h3>
+        <div class="row" style="gap:16px">
+          <div style="flex:1">
+            <div class="row" style="justify-content:space-between"><strong>Workout</strong><span id="wk-workout-count">0/4</span></div>
+            <div class="bar" aria-label="workout weekly progress"><span id="wk-workout-bar"></span></div>
+            <div class="mini" id="streak-workout">Streak: 0</div>
+          </div>
+          <div style="flex:1">
+            <div class="row" style="justify-content:space-between"><strong>Prayer</strong><span id="wk-prayer-count">0/4</span></div>
+            <div class="bar" aria-label="prayer weekly progress"><span id="wk-prayer-bar"></span></div>
+            <div class="mini" id="streak-prayer">Streak: 0</div>
+          </div>
+          <div style="flex:1">
+            <div class="row" style="justify-content:space-between"><strong>Journaling</strong><span id="wk-journal-count">0/4</span></div>
+            <div class="bar" aria-label="journaling weekly progress"><span id="wk-journal-bar"></span></div>
+            <div class="mini" id="streak-journal">Streak: 0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Quick Actions — Today</h3>
+        <div class="grid g-2">
+          <div>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-prayer-today" />
+              <span class="track"><span class="thumb"></span></span>
+            </label>
+            <div class="mini">Prayer done</div>
+          </div>
+          <div>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-journal-today" />
+              <span class="track"><span class="thumb"></span></span>
+            </label>
+            <div class="mini">Journal done</div>
+          </div>
+          <div>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-workout-credited-today" />
+              <span class="track"><span class="thumb"></span></span>
+            </label>
+            <div class="mini">Workout credited</div>
+          </div>
+          <div>
+            <label for="today-weight">Body weight</label>
+            <div class="row">
+              <input id="today-weight" type="number" inputmode="decimal" placeholder="e.g., 195.0" style="max-width:140px" />
+              <button class="btn block ghost" id="save-today-weight">Save</button>
+              <div class="mini" id="today-weight-unit"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOG -->
+    <section class="panel grid g-2" id="panel-log" role="tabpanel" aria-hidden="true" aria-labelledby="tab-log">
+      <div class="card">
+        <h3>Daily Log</h3>
+        <div class="row">
+          <div style="max-width:220px">
+            <label for="log-date">Date</label>
+            <input id="log-date" type="date" />
+          </div>
+          <div class="spacer"></div>
+          <div class="mini">Week starts: <span id="log-week-start"></span></div>
+        </div>
+        <div class="grid g-2">
+          <div>
+            <label class="toggle">
+              <input type="checkbox" id="log-prayer" />
+              <span class="track"><span class="thumb"></span></span>
+            </label>
+            <div class="mini">Prayer</div>
+          </div>
+          <div>
+            <label class="toggle">
+              <input type="checkbox" id="log-journal" />
+              <span class="track"><span class="thumb"></span></span>
+            </label>
+            <div class="mini">Journal</div>
+          </div>
+          <div>
+            <label class="toggle">
+              <input type="checkbox" id="log-workout-credited" />
+              <span class="track"><span class="thumb"></span></span>
+            </label>
+            <div class="mini">Workout credited</div>
+          </div>
+          <div>
+            <label for="log-weight">Body weight (<span id="log-weight-unit"></span>)</label>
+            <input id="log-weight" type="number" inputmode="decimal" placeholder="optional" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn block" id="save-day">Save Day</button>
+          <div class="mini">Autosaves after edits</div>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:16px 0">
+        <div>
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <strong>Random Prompt</strong>
+            <div class="seg no-print" role="group" aria-label="Prompt actions">
+              <button id="btn-new-prompt" title="New random prompt" aria-pressed="false">Shuffle</button>
+              <button id="btn-copy-prompt" title="Copy prompt to clipboard" aria-pressed="false">Copy</button>
+            </div>
+          </div>
+          <div class="prompt" id="prompt-text" style="margin-top:8px"></div>
+          <div class="mini" id="prompt-cycle"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Workout Logging</h3>
+        <div class="grid g-2">
+          <div>
+            <label for="wo-dt">Date & Time</label>
+            <input type="datetime-local" id="wo-dt">
+          </div>
+          <div>
+            <label for="wo-note">Note (optional)</label>
+            <input type="text" id="wo-note" maxlength="120" placeholder="e.g., Upper body + intervals">
+          </div>
+        </div>
+        <div id="sets-wrap" style="margin-top:10px">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <strong>Sets</strong>
+            <button class="btn block ghost" id="add-set">+ Add set</button>
+          </div>
+          <div id="sets"></div>
+        </div>
+        <div class="row" style="margin-top:10px;align-items:center;gap:14px">
+          <label class="toggle">
+            <input type="checkbox" id="wo-credit" />
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+          <div class="mini">Also credit workout for this workout's date</div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn block" id="save-wo">Save Workout</button>
+          <button class="btn block ghost" id="reset-wo">Clear Form</button>
+          <div class="mini">Tip: weights shown as <span id="wo-unit"></span> (converted from kg)</div>
+        </div>
+        <div class="mini" id="wo-last-saved"></div>
+      </div>
+    </section>
+
+    <!-- PROGRESS -->
+    <section class="panel grid" id="panel-progress" role="tabpanel" aria-hidden="true" aria-labelledby="tab-progress">
+      <div class="card">
+        <h3>Body Weight</h3>
+        <div class="row" style="gap:14px;align-items:center">
+          <div class="seg no-print">
+            <button class="range" data-range="7">Last 7</button>
+            <button class="range" data-range="30" aria-pressed="true">Last 30</button>
+            <button class="range" data-range="90">Last 90</button>
+            <button class="range" data-range="all">All</button>
+          </div>
+          <div class="mini">Unit: <span id="bw-unit"></span></div>
+          <div class="spacer"></div>
+          <div class="mini">Points: <span id="bw-count">0</span></div>
+        </div>
+        <canvas id="chart-weight" height="220" aria-label="Body weight chart"></canvas>
+      </div>
+
+      <div class="card">
+        <h3>Workouts — Volume & 1RM</h3>
+        <div class="row" style="gap:14px;align-items:center">
+          <div style="min-width:240px">
+            <label for="ex-filter">Exercise</label>
+            <input id="ex-filter" list="ex-list" placeholder="Search or pick (All)" />
+            <datalist id="ex-list"></datalist>
+          </div>
+          <div class="seg no-print" role="group" aria-label="Metric">
+            <button class="metric" data-m="vol" aria-pressed="true">Volume</button>
+            <button class="metric" data-m="1rm">Est. 1RM</button>
+          </div>
+          <div class="seg no-print">
+            <button class="range2" data-range="30" aria-pressed="true">30d</button>
+            <button class="range2" data-range="90">90d</button>
+            <button class="range2" data-range="all">All</button>
+          </div>
+          <div class="spacer"></div>
+          <div class="mini">Points: <span id="wo-points">0</span></div>
+        </div>
+        <canvas id="chart-wo" height="240" aria-label="Workout trend chart"></canvas>
+      </div>
+    </section>
+
+    
+    <!-- SUMMARY -->
+    <section class="panel grid g-2" id="panel-summary" role="tabpanel" aria-hidden="true" aria-labelledby="tab-summary">
+      <div class="card">
+        <h3>Weekly Summary</h3>
+        <div class="mini" id="summary-range"></div>
+        <div class="grid g-2" style="margin-top:8px">
+          <div>
+            <strong>This Week</strong>
+            <ul id="sum-this" style="margin:8px 0 0 18px;padding:0"></ul>
+            <div id="sum-status" class="mini" style="margin-top:6px"></div>
+          </div>
+          <div>
+            <div class="row" style="justify-content:space-between">
+              <strong>Streak</strong>
+              <span id="sum-streak" aria-live="polite">0 weeks</span>
+            </div>
+            <div class="row" style="justify-content:space-between; margin-top:8px">
+              <strong>Win Week %</strong>
+              <span id="sum-winrate">0% (0/0)</span>
+            </div>
+            <div class="mini" id="sum-weeks-range"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Share / Print</h3>
+        <div class="row">
+          <button class="btn block no-print" onclick="window.print()">Print Summary</button>
+          <button class="btn block no-print" onclick="exportBackup()">Export Backup</button>
+          <label class="btn no-print" for="backup-file-input" style="margin-left:8px">Import Backup</label>
+          <input id="backup-file-input" type="file" accept=".json,application/json" style="display:none" />
+          <div class="mini">Print includes week dates and counts.</div>
+        </div>
+      </div>
+    </section>
+</section>
+
+
+    <!-- SETTINGS -->
+    <section class="panel grid g-2" id="panel-settings" role="tabpanel" aria-hidden="true" aria-labelledby="tab-settings">
+      <div class="card">
+        <h3>Challenge Settings</h3>
+        <div class="grid g-2">
+          <div>
+            <label for="set-start">100-day start date</label>
+            <input id="set-start" type="date">
+          </div>
+          <div>
+            <label>Week starts</label>
+            <div class="seg" role="group" aria-label="Week start">
+              <button class="wkstart" data-val="mon" aria-pressed="true">Mon</button>
+              <button class="wkstart" data-val="sun">Sun</button>
+            </div>
+          </div>
+          <div>
+            <label>Units</label>
+            <div class="seg" role="group" aria-label="Units">
+              <button class="units" data-val="imperial" aria-pressed="true">lb</button>
+              <button class="units" data-val="metric">kg</button>
+            </div>
+          </div>
+          <div>
+            <label>Accent theme</label>
+            <div class="seg" role="group" aria-label="Theme">
+              <button class="theme" data-val="navy-mint" aria-pressed="true">Navy+Mint</button>
+              <button class="theme" data-val="plum-teal">Plum+Teal</button>
+            </div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;gap:10px">
+          <button class="btn block no-print" id="btn-save-file">Save to File</button>
+          <label class="btn ghost no-print" for="file-input" style="display:inline-block">Load from File</label>
+          <input id="file-input" type="file" accept="application/json" style="display:none" />
+          <button class="btn block bad no-print" id="btn-reset">Reset 100-Day Challenge</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Storage</h3>
+        <div class="mini">Last autosave: <span id="last-saved">—</span></div>
+        <div class="mini">localStorage usage (approx): <span id="ls-usage">—</span></div>
+        <div class="mini">Schema: settings/days/workouts (see comments in source)</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="confetti" id="confetti" aria-hidden="true"></div>
+
+<script>
+/* =========================
+   DATA SCHEMA (JSON)
+   {
+     settings:{
+       startDate:"YYYY-MM-DD",
+       weekStartsOnMonday:true,
+       unitIsImperial:true,
+       accentTheme:"navy-mint",
+       lastRandomPromptIndex:0
+     },
+     days:{
+       "YYYY-MM-DD":{prayed:true, journaled:false, bodyWeightKg: 00.00, workoutCredited:false}
+     },
+     workouts:[
+       { id:"uuid", date:"YYYY-MM-DDTHH:mm", note:"", sets:[
+         {exerciseName:"Bench Press", setIndex:1, reps:8, weightKg:60}
+       ]}
+     ]
+   }
+   ========================= */
+
+const PROMPTS = [
+"What am I grateful for today that I couldn’t see a month ago?",
+"Which parts of that relationship helped me grow—and which held me back?",
+"What do I miss—and what do I not miss? Why?",
+"If my best friend were in my shoes, what would I tell them?",
+"What does “healing” look like in daily actions, not words?",
+"Three signs I’m moving forward (even if small).",
+"What boundaries will protect my peace this month?",
+"A time I kept a promise to myself—how did it feel?",
+"What patterns do I want to break before my next relationship?",
+"What does a great day look like in this 100-day season?",
+"Where did I act from fear instead of values?",
+"Write a letter to future me on Day 100.",
+"What would make me proud this week?",
+"One lesson from the breakup I’m thankful for.",
+"What triggers me right now—and what helps me regulate?",
+"How can I make prayer feel like a conversation, not a chore?",
+"Who are my “energy adders”? How can I see them more?",
+"When do I feel most myself?",
+"What story about myself am I retiring today?",
+"The kindest thing I can do for myself in 10 minutes.",
+"A belief about love I want to keep—and one to let go.",
+"What does commitment to myself look like tonight?",
+"How can I make my home feel like a sanctuary?",
+"Which workouts make me feel powerful? Why?",
+"Describe a moment I handled better than last time.",
+"If peace had a schedule, what would be on it?",
+"What’s one hard truth I’m ready to face?",
+"What does God invite me to practice this week?",
+"Three qualities I bring to a relationship at my best.",
+"Where can I replace distraction with presence?",
+"What unmet needs was I outsourcing to someone else?",
+"What does “enough” look like in fitness, faith, and mind?",
+"Write a prayer for strength and steadiness.",
+"What am I learning about patience?",
+"What does forgiveness mean for me right now?",
+"What small win deserves celebration today?",
+"How do I want to be loved—and how will I love myself that way?",
+"Which core values guide my next yes/no?",
+"What would a 1% better version of today look like?",
+"Where am I overcomplicating simple things?",
+"Write a letter of release (not to be sent).",
+"What routines keep me grounded?",
+"What does “start again” mean this morning?",
+"A boundary I’ll honor this weekend is…",
+"What’s one thing I can do now that I couldn’t before?",
+"Where can I trade intensity for consistency?",
+"Who am I when nobody’s watching?",
+"What am I excited to learn next?",
+"What relationship green flags will I look for?",
+"If Day 100 were a scene in a movie, what’s happening?"
+];
+
+const appEl = document.getElementById('app');
+const toastEl = document.getElementById('toast');
+
+function showToast(msg, ms=1800){ toastEl.textContent=msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'), ms); }
+
+const STORAGE_KEY='hundredday.v1';
+let DATA = null;
+let AUTOSAVE_TIMER=null;
+
+function uuid(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16)}) }
+function todayStr(){ return toDateStr(new Date()); }
+function toDateStr(d){ const tz = new Date(d.getTime() - d.getTimezoneOffset()*60000); return tz.toISOString().slice(0,10); } // local YYYY-MM-DD
+function startOfDay(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function parseDate(s){ // YYYY-MM-DD
+  const [y,m,dd]=s.split('-').map(n=>+n); return new Date(y, m-1, dd);
+}
+function clamp(n,a,b){return Math.min(b,Math.max(a,n))}
+function kgToLb(kg){ return kg*2.2046226218 }
+function lbToKg(lb){ return lb/2.2046226218 }
+
+function initData(){
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if(saved){ try{ DATA = JSON.parse(saved); } catch{ DATA=null; } }
+  if(!DATA){
+    DATA = {
+      settings:{
+        startDate: todayStr(),
+        weekStartsOnMonday: true,
+        unitIsImperial: true,
+        accentTheme: "navy-mint",
+        lastRandomPromptIndex: -1
+      },
+      days:{},
+      workouts:[]
+    };
+    saveData();
+  }
+  // Backfill schema keys if missing
+  DATA.settings.startDate ??= todayStr();
+  DATA.settings.weekStartsOnMonday ??= true;
+  DATA.settings.unitIsImperial ??= true;
+  DATA.settings.accentTheme ??= "navy-mint";
+  DATA.settings.lastRandomPromptIndex ??= -1;
+}
+
+function saveData(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA));
+  document.getElementById('last-saved').textContent = new Date().toLocaleString();
+  // update storage usage estimate
+  try{
+    const used = (new Blob(Object.values(localStorage)).size/1024).toFixed(1);
+    document.getElementById('ls-usage').textContent = `${used} KB`;
+  }catch{}
+}
+
+function autosave(){ clearTimeout(AUTOSAVE_TIMER); AUTOSAVE_TIMER=setTimeout(saveData, 350); }
+
+function ensureDay(dateStr){
+  if(!DATA.days[dateStr]){
+    DATA.days[dateStr]={prayed:false,journaled:false,bodyWeightKg:null,workoutCredited:false};
+  }
+  return DATA.days[dateStr];
+}
+
+// Week helpers respecting setting
+function getWeekStart(d){
+  const wd = DATA.settings.weekStartsOnMonday ? (d.getDay()+6)%7 : d.getDay(); // 0-indexed
+  const s = new Date(d); s.setDate(s.getDate()-wd); s.setHours(0,0,0,0); return s;
+}
+function getWeekRangeOf(d){
+  const start = getWeekStart(d);
+  const end = new Date(start); end.setDate(start.getDate()+6);
+  return [start,end];
+}
+function iterDays(from,to){
+  const out=[]; const d=new Date(from);
+  while(d<=to){ out.push(new Date(d)); d.setDate(d.getDate()+1); }
+  return out;
+}
+
+function getCurrentWeekCounts(){
+  const [ws,we] = getWeekRangeOf(new Date());
+  let workout=0, prayer=0, journal=0;
+  iterDays(ws,we).forEach(dd=>{
+    const key = toDateStr(dd);
+    const day = DATA.days[key];
+    if(!day) return;
+    if(day.workoutCredited) workout++;
+    if(day.prayed) prayer++;
+    if(day.journaled) journal++;
+  });
+  return {workout,prayer,journal};
+}
+function getPrevWeekCounts(){
+  const now = new Date();
+  const [ws,we] = getWeekRangeOf(now);
+  const pStart = new Date(ws); pStart.setDate(ws.getDate()-7);
+  const pEnd = new Date(we); pEnd.setDate(we.getDate()-7);
+  let workout=0, prayer=0, journal=0;
+  iterDays(pStart,pEnd).forEach(dd=>{
+    const key = toDateStr(dd);
+    const day = DATA.days[key];
+    if(!day) return;
+    if(day.workoutCredited) workout++;
+    if(day.prayed) prayer++;
+    if(day.journaled) journal++;
+  });
+  return {workout,prayer,journal, range:[pStart,pEnd]};
+}
+
+function consecutiveStreak(field){
+  // Count back from today for prayed/journaled/workoutCredited
+  let streak=0;
+  for(let i=0;i<365;i++){
+    const d=new Date(); d.setDate(d.getDate()-i);
+    const key=toDateStr(d);
+    const day=DATA.days[key];
+    const val = field==='workout' ? (day&&day.workoutCredited) : (field==='prayer' ? (day&&day.prayed) : (day&&day.journaled));
+    if(val) streak++; else break;
+  }
+  return streak;
+}
+
+/* ---------- UI wiring (tabs) ---------- */
+const tabs=[...document.querySelectorAll('.tab')];
+const panels=[...document.querySelectorAll('.panel')];
+tabs.forEach(t=>{
+  t.addEventListener('click',()=>{
+    tabs.forEach(x=>x.setAttribute('aria-selected','false'));
+    panels.forEach(p=>p.setAttribute('aria-hidden','true'));
+    t.setAttribute('aria-selected','true');
+    const panel=document.getElementById(t.getAttribute('aria-controls'));
+    panel.setAttribute('aria-hidden','false');
+    // On show, refresh that panel
+    if(panel.id==='panel-dashboard') renderDashboard();
+    if(panel.id==='panel-log') renderLogPanel();
+    if(panel.id==='panel-progress') renderProgressPanel();
+    if(panel.id==='panel-summary') renderSummaryPanel();
+    if(panel.id==='panel-settings') renderSettingsPanel();
+  });
+});
+
+/* ---------- Dashboard ---------- */
+function renderRing(){
+  const start = parseDate(DATA.settings.startDate);
+  const today = startOfDay(new Date());
+  const diffDays = Math.floor((today - start)/86400000) + 1; // Day 1 is start date
+  const day = clamp(diffDays, 0, 100);
+  document.getElementById('day-count').textContent = day;
+  document.getElementById('day-label').textContent = day<=0 ? 'Not started' : `Day ${day}`;
+  document.getElementById('start-date-label').textContent = DATA.settings.startDate;
+  const remain = 100 - day;
+  document.getElementById('days-remaining').textContent = remain>0 ? `${remain} day(s) remaining` : 'Challenge completed 🎉';
+  // Week span display
+  const [ws,we] = getWeekRangeOf(new Date());
+  document.getElementById('week-span').textContent = `This week: ${ws.toLocaleDateString()} – ${we.toLocaleDateString()}`;
+
+  // Ring arc
+  const circ = 2 * Math.PI * 52;
+  const arc = Math.max(0, Math.min(circ, circ * (day/100)));
+  document.getElementById('ring-arc').setAttribute('stroke-dasharray', `${arc} 999`);
+
+  if(day===100) celebrate();
+}
+
+function celebrate(){
+  const c = document.getElementById('confetti');
+  c.innerHTML='';
+  for(let i=0;i<80;i++){
+    const p=document.createElement('i');
+    const hue = (i*47)%360;
+    p.style.background=`hsl(${hue} 70% 55%)`;
+    p.style.left = (Math.random()*100)+'%';
+    p.style.animationDelay = (Math.random()*0.7)+'s';
+    p.style.transform = `translateY(-20vh) rotate(${Math.random()*60}deg)`;
+    c.appendChild(p);
+  }
+  setTimeout(()=>c.innerHTML='', 2000);
+}
+
+function renderDashboard(){
+  renderRing();
+  // Weekly bars
+  const goal=4;
+  const cur = getCurrentWeekCounts();
+  const setBar=(idBar,idTxt,val)=>{ document.getElementById(idBar).style.width = `${clamp((val/goal)*100,0,100)}%`; document.getElementById(idTxt).textContent=`${val}/4`; };
+  setBar('wk-workout-bar','wk-workout-count',cur.workout);
+  setBar('wk-prayer-bar','wk-prayer-count',cur.prayer);
+  setBar('wk-journal-bar','wk-journal-count',cur.journal);
+  document.getElementById('streak-workout').textContent = `Streak: ${consecutiveStreak('workout')}`;
+  document.getElementById('streak-prayer').textContent = `Streak: ${consecutiveStreak('prayer')}`;
+  document.getElementById('streak-journal').textContent = `Streak: ${consecutiveStreak('journal')}`;
+  // Today toggles + weight
+  const t = todayStr();
+  const day = ensureDay(t);
+  document.getElementById('toggle-prayer-today').checked = !!day.prayed;
+  document.getElementById('toggle-journal-today').checked = !!day.journaled;
+  document.getElementById('toggle-workout-credited-today').checked = !!day.workoutCredited;
+  document.getElementById('today-weight-unit').textContent = DATA.settings.unitIsImperial?'lb':'kg';
+  document.getElementById('today-weight').value = day.bodyWeightKg!=null ? (DATA.settings.unitIsImperial ? round(kgToLb(day.bodyWeightKg)) : round(day.bodyWeightKg)) : '';
+}
+document.getElementById('quick-today').addEventListener('click',()=>{
+  tabs.find(t=>t.id==='tab-log').click();
+  document.getElementById('log-date').value = todayStr();
+});
+['toggle-prayer-today','toggle-journal-today','toggle-workout-credited-today'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',(e)=>{
+    const d=ensureDay(todayStr());
+    if(id.includes('prayer')) d.prayed=e.target.checked;
+    if(id.includes('journal')) d.journaled=e.target.checked;
+    if(id.includes('workout')) d.workoutCredited=e.target.checked;
+    autosave();
+    renderDashboard(); // refresh counts/bars
+    showToast('Saved for today');
+  });
+});
+document.getElementById('save-today-weight').addEventListener('click',()=>{
+  const v = parseFloat(document.getElementById('today-weight').value);
+  if(!isFinite(v)){ showToast('Enter a valid number'); return; }
+  const kg = DATA.settings.unitIsImperial ? lbToKg(v) : v;
+  ensureDay(todayStr()).bodyWeightKg = +kg.toFixed(3);
+  autosave(); renderDashboard(); renderProgressPanel();
+  showToast('Weight saved');
+});
+
+/* ---------- Log Panel ---------- */
+function renderLogPanel(){
+  const d = document.getElementById('log-date');
+  if(!d.value) d.value=todayStr();
+  document.getElementById('log-week-start').textContent = DATA.settings.weekStartsOnMonday?'Mon':'Sun';
+  document.getElementById('log-weight-unit').textContent = DATA.settings.unitIsImperial?'lb':'kg';
+  document.getElementById('wo-unit').textContent = DATA.settings.unitIsImperial?'lb':'kg';
+  // Fill day toggles for selected
+  fillLogDay();
+  // Prompt
+  updatePrompt(false);
+}
+document.getElementById('log-date').addEventListener('change',fillLogDay);
+function fillLogDay(){
+  const date = document.getElementById('log-date').value || todayStr();
+  const day = ensureDay(date);
+  document.getElementById('log-prayer').checked = !!day.prayed;
+  document.getElementById('log-journal').checked = !!day.journaled;
+  document.getElementById('log-workout-credited').checked = !!day.workoutCredited;
+  document.getElementById('log-weight').value = day.bodyWeightKg!=null ? (DATA.settings.unitIsImperial? round(kgToLb(day.bodyWeightKg)) : round(day.bodyWeightKg)) : '';
+}
+document.getElementById('save-day').addEventListener('click',()=>{
+  const date = document.getElementById('log-date').value || todayStr();
+  const d = ensureDay(date);
+  d.prayed = document.getElementById('log-prayer').checked;
+  d.journaled = document.getElementById('log-journal').checked;
+  d.workoutCredited = document.getElementById('log-workout-credited').checked;
+  const w = document.getElementById('log-weight').value.trim();
+  d.bodyWeightKg = w==='' ? null : +(DATA.settings.unitIsImperial? lbToKg(parseFloat(w)) : parseFloat(w));
+  autosave(); renderDashboard(); renderProgressPanel();
+  showToast('Day saved');
+});
+
+/* Random prompt handling (no repeats until all shown) */
+let promptOrder = [];
+function ensurePromptOrder(){
+  if(promptOrder.length!==PROMPTS.length){
+    promptOrder=[...PROMPTS.keys()];
+    shuffle(promptOrder);
+  }
+}
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
+function updatePrompt(cycle=true){
+  ensurePromptOrder();
+  if(cycle){
+    DATA.settings.lastRandomPromptIndex = (DATA.settings.lastRandomPromptIndex+1) % PROMPTS.length;
+    autosave();
+  }
+  const idx = (DATA.settings.lastRandomPromptIndex<0)? 0 : DATA.settings.lastRandomPromptIndex;
+  const actual = promptOrder[idx];
+  document.getElementById('prompt-text').textContent = PROMPTS[actual];
+  document.getElementById('prompt-cycle').textContent = `Prompt ${idx+1}/${PROMPTS.length}`;
+}
+document.getElementById('btn-new-prompt').addEventListener('click',()=>{ updatePrompt(true); showToast('New prompt'); });
+document.getElementById('btn-copy-prompt').addEventListener('click',async ()=>{
+  try{ await navigator.clipboard.writeText(document.getElementById('prompt-text').textContent); showToast('Prompt copied'); }
+  catch{ showToast('Copy failed'); }
+});
+
+/* Workout form */
+function addSetRow(pref={}){
+  const setsEl=document.getElementById('sets');
+  const row=document.createElement('div');
+  row.className='row';
+  row.style.border='1px solid var(--border)'; row.style.borderRadius='10px'; row.style.padding='10px'; row.style.marginTop='8px';
+  row.innerHTML=`
+    <input class="ex-name" placeholder="Exercise name" value="${pref.exerciseName||''}" style="min-width:160px;flex:1">
+    <input class="ex-idx" type="number" min="1" placeholder="Set #" value="${pref.setIndex||''}" style="width:90px">
+    <input class="ex-reps" type="number" min="1" placeholder="Reps" value="${pref.reps||''}" style="width:90px">
+    <input class="ex-w" type="number" step="0.5" min="0" placeholder="Weight (${DATA.settings.unitIsImperial?'lb':'kg'})" value="${pref.weightKg!=null ? (DATA.settings.unitIsImperial? round(kgToLb(pref.weightKg)) : pref.weightKg):''}" style="width:160px">
+    <button class="btn block ghost del">Delete</button>
+  `;
+  setsEl.appendChild(row);
+  row.querySelector('.del').addEventListener('click',()=>{ row.remove(); });
+}
+document.getElementById('add-set').addEventListener('click',()=>addSetRow());
+document.getElementById('reset-wo').addEventListener('click',()=>{
+  document.getElementById('wo-dt').value='';
+  document.getElementById('wo-note').value='';
+  document.getElementById('wo-credit').checked=false;
+  document.getElementById('sets').innerHTML='';
+});
+document.getElementById('save-wo').addEventListener('click',()=>{
+  const dt = document.getElementById('wo-dt').value.trim();
+  if(!dt){ showToast('Pick a date/time'); return; }
+  const note = document.getElementById('wo-note').value.trim();
+  const rows = [...document.querySelectorAll('#sets>.row')];
+  if(rows.length===0){ showToast('Add at least one set'); return; }
+  const sets = [];
+  for(const r of rows){
+    const name=r.querySelector('.ex-name').value.trim();
+    const idx=+r.querySelector('.ex-idx').value;
+    const reps=+r.querySelector('.ex-reps').value;
+    const wUI=parseFloat(r.querySelector('.ex-w').value);
+    if(!name || !isFinite(idx) || !isFinite(reps) || !isFinite(wUI)){ showToast('Fill all set fields'); return; }
+    const wkg = DATA.settings.unitIsImperial ? lbToKg(wUI) : wUI;
+    sets.push({exerciseName:name,setIndex:idx,reps:reps,weightKg:+wkg.toFixed(3)});
+  }
+  const rec={id:uuid(), date:dt, note, sets};
+  DATA.workouts.push(rec);
+  if(document.getElementById('wo-credit').checked){
+    const dateKey = dt.slice(0,10);
+    ensureDay(dateKey).workoutCredited=true;
+  }
+  autosave();
+  document.getElementById('wo-last-saved').textContent = `Saved ${new Date().toLocaleString()}`;
+  showToast('Workout saved');
+  // Refresh progress charts and dashboard
+  renderDashboard(); renderProgressPanel();
+});
+
+/* ---------- Progress Panel & Simple Charts (Canvas) ---------- */
+
+function renderProgressPanel(){
+  // Body weight
+  document.getElementById('bw-unit').textContent = DATA.settings.unitIsImperial?'lb':'kg';
+  const rangeBtn = document.querySelector('.range[aria-pressed="true"]') || document.querySelector('.range[data-range="30"]');
+  drawWeightChart(rangeBtn?.dataset.range || '30');
+  // Workout exercises list
+  const exSet = new Set();
+  DATA.workouts.forEach(w=>w.sets.forEach(s=>exSet.add(s.exerciseName)));
+  const list = document.getElementById('ex-list'); list.innerHTML='';
+  [...exSet].sort().forEach(x=>{ const o=document.createElement('option'); o.value=x; list.appendChild(o); });
+  // Workout chart default
+  const mbtn = document.querySelector('.metric[aria-pressed="true"]') || document.querySelector('.metric[data-m="vol"]');
+  const rbtn = document.querySelector('.range2[aria-pressed="true"]') || document.querySelector('.range2[data-range="30"]');
+  drawWorkoutChart(mbtn.dataset.m, rbtn.dataset.range, document.getElementById('ex-filter').value.trim()||null);
+}
+document.querySelectorAll('.range').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.range').forEach(x=>x.setAttribute('aria-pressed','false')); b.setAttribute('aria-pressed','true');
+  drawWeightChart(b.dataset.range);
+}));
+document.querySelectorAll('.metric').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.metric').forEach(x=>x.setAttribute('aria-pressed','false')); b.setAttribute('aria-pressed','true');
+  const rbtn = document.querySelector('.range2[aria-pressed="true"]'); const ex = document.getElementById('ex-filter').value.trim()||null;
+  drawWorkoutChart(b.dataset.m, rbtn.dataset.range, ex);
+}));
+document.querySelectorAll('.range2').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.range2').forEach(x=>x.setAttribute('aria-pressed','false')); b.setAttribute('aria-pressed','true');
+  const mbtn = document.querySelector('.metric[aria-pressed="true"]'); const ex = document.getElementById('ex-filter').value.trim()||null;
+  drawWorkoutChart(mbtn.dataset.m, b.dataset.range, ex);
+}));
+document.getElementById('ex-filter').addEventListener('change',()=>{
+  const mbtn = document.querySelector('.metric[aria-pressed="true"]'); const rbtn = document.querySelector('.range2[aria-pressed="true"]');
+  drawWorkoutChart(mbtn.dataset.m, rbtn.dataset.range, document.getElementById('ex-filter').value.trim()||null);
+});
+
+function round(n){ return Math.round(n*100)/100; }
+
+function drawWeightChart(range){
+  const ctx = document.getElementById('chart-weight').getContext('2d');
+  clearCanvas(ctx);
+  const pts = [];
+  Object.entries(DATA.days).forEach(([k,v])=>{
+    if(v.bodyWeightKg!=null){ pts.push({t:new Date(k), y: DATA.settings.unitIsImperial? kgToLb(v.bodyWeightKg):v.bodyWeightKg}); }
+  });
+  pts.sort((a,b)=>a.t-b.t);
+  const filtered = filterByRange(pts, range);
+  document.getElementById('bw-count').textContent = filtered.length;
+  drawLineChart(ctx, filtered, {yLabel: DATA.settings.unitIsImperial?'lb':'kg'});
+}
+
+function filterByRange(pts, range){
+  if(range==='all') return pts;
+  const now = new Date();
+  const days = +range;
+  const from = new Date(now); from.setDate(now.getDate()-days);
+  return pts.filter(p=>p.t>=from);
+}
+
+function drawWorkoutChart(metric, range, exName){
+  const ctx = document.getElementById('chart-wo').getContext('2d');
+  clearCanvas(ctx);
+  const map=new Map(); // date->value
+  DATA.workouts.forEach(w=>{
+    const d = new Date(w.date);
+    w.sets.forEach(s=>{
+      if(exName && s.exerciseName.toLowerCase()!==exName.toLowerCase()) return;
+      const key = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      if(!map.has(key)) map.set(key, 0);
+      if(metric==='vol'){
+        map.set(key, map.get(key) + (s.reps * s.weightKg)); // kg*reps
+      }else{
+        // Epley 1RM ≈ w*(1+reps/30), pick max per day
+        const est = s.weightKg*(1 + s.reps/30);
+        map.set(key, Math.max(map.get(key), est));
+      }
+    });
+  });
+  let pts=[...map.entries()].map(([k,v])=>({t:new Date(+k), y: DATA.settings.unitIsImperial ? kgToLb(v) : v}));
+  pts.sort((a,b)=>a.t-b.t);
+  pts = filterByRange(pts, range);
+  document.getElementById('wo-points').textContent = pts.length;
+  const label = (metric==='vol'?'Volume (reps×wt)':'Est. 1RM') + ' ' + (DATA.settings.unitIsImperial?'(lb)':'(kg)');
+  if(metric==='vol') drawBarChart(ctx, pts, {yLabel:label});
+  else drawLineChart(ctx, pts, {yLabel:label});
+}
+
+/* Tiny charting helpers (no external lib) */
+function clearCanvas(ctx){ const c=ctx.canvas; ctx.clearRect(0,0,c.width,c.height); }
+function drawAxes(ctx, bounds, yMin, yMax, xDates){
+  const {x,y,w,h} = bounds;
+  ctx.save();
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--border'); ctx.lineWidth=1;
+  // frame
+  ctx.strokeRect(x,y,w,h);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--muted');
+  ctx.font = '12px system-ui';
+  // y ticks (4)
+  for(let i=0;i<=4;i++){
+    const yy = y + h - (i/4)*h;
+    ctx.beginPath(); ctx.moveTo(x,yy); ctx.lineTo(x+w,yy); ctx.stroke();
+    const val = yMin + (i/4)*(yMax-yMin);
+    ctx.fillText(String(round(val)), x+4, yy-2);
+  }
+  // x ticks ~ 4
+  const n = Math.min(4, xDates.length-1);
+  for(let i=0;i<=n;i++){
+    const idx = Math.round(i*(xDates.length-1)/Math.max(n,1));
+    const xx = x + (idx/(xDates.length-1))*w;
+    ctx.beginPath(); ctx.moveTo(xx,y+h); ctx.lineTo(xx,y+h+4); ctx.stroke();
+    if(xDates[idx]) ctx.fillText(xDates[idx].toLocaleDateString(), xx-20, y+h+16);
+  }
+  ctx.restore();
+}
+function scaleY(v, yMin, yMax, y, h){ if(yMax===yMin) return y+h/2; return y + (1 - (v-yMin)/(yMax-yMin))*h; }
+function drawLineChart(ctx, pts, {yLabel}={}){
+  const c=ctx.canvas; const padL=48, padR=8, padT=10, padB=28;
+  const bounds={x:padL,y:padT,w:c.width-padL-padR,h:c.height-padT-padB};
+  if(pts.length===0){ drawEmpty(ctx,bounds); return; }
+  const ys=pts.map(p=>p.y); const yMin=Math.min(...ys)*0.95, yMax=Math.max(...ys)*1.05;
+  drawAxes(ctx,bounds, yMin, yMax, pts.map(p=>p.t));
+  ctx.save(); ctx.lineWidth=2.0; ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent-2');
+  ctx.beginPath();
+  pts.forEach((p,i)=>{
+    const xx = bounds.x + (i/(pts.length-1))*bounds.w;
+    const yy = scaleY(p.y, yMin, yMax, bounds.y, bounds.h);
+    if(i===0) ctx.moveTo(xx,yy); else ctx.lineTo(xx,yy);
+  });
+  ctx.stroke();
+  ctx.restore();
+  // label
+  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--muted'); ctx.font='12px system-ui';
+  ctx.fillText(yLabel||'', bounds.x+6, bounds.y+14);
+}
+function drawBarChart(ctx, pts, {yLabel}={}){
+  const c=ctx.canvas; const padL=48, padR=8, padT=10, padB=28;
+  const bounds={x:padL,y:padT,w:c.width-padL-padR,h:c.height-padT-padB};
+  if(pts.length===0){ drawEmpty(ctx,bounds); return; }
+  const ys=pts.map(p=>p.y); const yMin=0, yMax=Math.max(1, Math.max(...ys)*1.15);
+  drawAxes(ctx,bounds, yMin, yMax, pts.map(p=>p.t));
+  ctx.save();
+  const grad = ctx.createLinearGradient(0,0,0,c.height);
+  grad.addColorStop(0,getComputedStyle(document.documentElement).getPropertyValue('--accent'));
+  grad.addColorStop(1,getComputedStyle(document.documentElement).getPropertyValue('--accent-2'));
+  ctx.fillStyle=grad;
+  const bw = Math.max(4, bounds.w/Math.max(pts.length,8)*0.7);
+  pts.forEach((p,i)=>{
+    const xx = bounds.x + (i/(pts.length))*bounds.w + 4;
+    const yy = scaleY(p.y, yMin, yMax, bounds.y, bounds.h);
+    const h = bounds.y + bounds.h - yy;
+    ctx.fillRect(xx, yy, bw, h);
+  });
+  ctx.restore();
+  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--muted'); ctx.font='12px system-ui';
+  ctx.fillText(yLabel||'', bounds.x+6, bounds.y+14);
+}
+function drawEmpty(ctx, bounds){
+  ctx.save();
+  ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--border'); ctx.strokeRect(bounds.x,bounds.y,bounds.w,bounds.h);
+  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--muted'); ctx.font='13px system-ui';
+  ctx.fillText('No data yet', bounds.x+10, bounds.y+22);
+  ctx.restore();
+}
+
+
+/* ----- Weekly helpers for streak & win percentage ----- */
+function getWeekRangesFromStart(excludeCurrent=true){
+  const start = parseDate(DATA.settings.startDate);
+  const firstWeekStart = getWeekStart(start);
+  const [curStart, curEnd] = getWeekRangeOf(new Date());
+  const weeks = [];
+  // Determine last week to include
+  const lastEnd = excludeCurrent ? new Date(curStart.getTime()-1) : curEnd;
+  // If excludeCurrent and start is after lastEnd, return empty
+  if(lastEnd < firstWeekStart) return {weeks:[], current:[curStart,curEnd], first:firstWeekStart, last:lastEnd};
+  // Build weeks from firstWeekStart to lastEnd
+  let s = new Date(firstWeekStart);
+  while(s <= lastEnd){
+    const e = new Date(s); e.setDate(s.getDate()+6);
+    weeks.push([new Date(s), e]);
+    s.setDate(s.getDate()+7);
+  }
+  return {weeks, current:[curStart,curEnd], first:firstWeekStart, last:lastEnd};
+}
+
+function getCountsForRange(start, end){
+  let workout=0, prayer=0, journal=0;
+  iterDays(start, end).forEach(d=>{
+    const key = toDateStr(d);
+    const day = DATA.days[key];
+    if(!day) return;
+    if(day.workoutCredited) workout++;
+    if(day.prayed) prayer++;
+    if(day.journaled) journal++;
+  });
+  return {workout, prayer, journal};
+}
+
+function isWinWeek(counts){
+  return counts.workout>=4 && counts.prayer>=4 && counts.journal>=4;
+}
+
+function computeWeeklyStats(){
+  const {weeks: prevWeeks, current:[curStart,curEnd], first, last} = getWeekRangesFromStart(true);
+  // Previous weeks stats
+  const prevWins = [];
+  for(const [s,e] of prevWeeks){
+    const c = getCountsForRange(s,e);
+    prevWins.push(isWinWeek(c));
+  }
+  const totalPrev = prevWeeks.length;
+  const winsPrev = prevWins.filter(Boolean).length;
+  // Streak: consecutive wins ending with last completed week; if current week already a win, include it
+  let streak = 0;
+  // Count streak in previous weeks (ending at last completed week)
+  for(let i=prevWins.length-1; i>=0; i--){
+    if(prevWins[i]) streak++;
+    else break;
+  }
+  // If current week already meets goals, add 1
+  const curCounts = getCountsForRange(curStart, curEnd);
+  const curIsWin = isWinWeek(curCounts);
+  const streakWithCurrent = curIsWin ? streak + 1 : streak;
+
+  const winPct = totalPrev>0 ? Math.round((winsPrev/totalPrev)*100) : 0;
+  return {
+    curRange:[curStart,curEnd],
+    curCounts, curIsWin,
+    totalPrev, winsPrev, winPct,
+    streakPrev: streak, streak: streakWithCurrent,
+    firstPrev: first, lastPrev: last
+  };
+}
+
+
+// ----- Backup / Restore -----
+function exportBackup(){
+  try{
+    const payload = JSON.stringify(DATA, null, 2);
+    const blob = new Blob([payload], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    a.href = url;
+    a.download = `HundredDay-backup-${ts}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }catch(e){ alert('Export failed: '+e.message); }
+}
+
+(function(){
+  const input = document.getElementById('backup-file-input');
+  if(!input) return;
+  input.addEventListener('change', async (ev)=>{
+    const f = ev.target.files && ev.target.files[0];
+    if(!f) return;
+    try{
+      const text = await f.text();
+      const obj = JSON.parse(text);
+      if(!obj || typeof obj !== 'object' || !obj.settings || !obj.days){
+        alert('This file does not look like a HundredDay backup.');
+        return;
+      }
+      // Replace data and persist
+      DATA = obj;
+      localStorage.setItem('hundredday-data', JSON.stringify(DATA));
+      // Re-render
+      try { renderAll(); } catch(_){}
+      alert('Backup imported successfully.');
+    }catch(e){
+      alert('Import failed: '+e.message);
+    }finally{
+      ev.target.value = '';
+    }
+  });
+})();
+
+/* ---------- Summary ---------- */
+
+function renderSummaryPanel(){
+  const stats = computeWeeklyStats();
+  const [ws, we] = stats.curRange;
+  document.getElementById('summary-range').textContent = `This week: ${ws.toLocaleDateString()} – ${we.toLocaleDateString()}`;
+
+  const mk = (o)=>[
+    `Workouts credited: ${o.workout}/4 ${o.workout>=4?'✅':'❌'}`,
+    `Prayer days: ${o.prayer}/4 ${o.prayer>=4?'✅':'❌'}`,
+    `Journal days: ${o.journal}/4 ${o.journal>=4?'✅':'❌'}`
+  ];
+  const ulThis = document.getElementById('sum-this'); ulThis.innerHTML='';
+  mk(stats.curCounts).forEach(li=>{ const e=document.createElement('li'); e.textContent=li; ulThis.appendChild(e); });
+  const status = `Goal met this week: ${(stats.curCounts.workout>=4)+(stats.curCounts.prayer>=4)+(stats.curCounts.journal>=4)}/3`;
+  document.getElementById('sum-status').textContent = status;
+
+  // Streak (weeks)
+  document.getElementById('sum-streak').textContent = `${stats.streak} week${stats.streak===1?'':'s'}`;
+
+  // Win Week Percentage (previous weeks only)
+  document.getElementById('sum-winrate').textContent = `${stats.winPct}% (${stats.winsPrev}/${stats.totalPrev})`;
+  if(stats.totalPrev>0){
+    document.getElementById('sum-weeks-range').textContent = `Since ${stats.firstPrev.toLocaleDateString()} through ${stats.lastPrev.toLocaleDateString()} (completed weeks)`;
+  }else{
+    document.getElementById('sum-weeks-range').textContent = `No completed weeks yet`;
+  }
+}
+
+/* ---------- Settings ---------- */
+function renderSettingsPanel(){
+  document.getElementById('set-start').value = DATA.settings.startDate;
+  // Week start buttons
+  document.querySelectorAll('.wkstart').forEach(b=>b.setAttribute('aria-pressed', String((DATA.settings.weekStartsOnMonday && b.dataset.val==='mon') || (!DATA.settings.weekStartsOnMonday && b.dataset.val==='sun'))));
+  document.querySelectorAll('.units').forEach(b=>b.setAttribute('aria-pressed', String((DATA.settings.unitIsImperial && b.dataset.val==='imperial') || (!DATA.settings.unitIsImperial && b.dataset.val==='metric'))));
+  document.querySelectorAll('.theme').forEach(b=>b.setAttribute('aria-pressed', String((DATA.settings.accentTheme===b.dataset.val))));
+  // theme apply
+  applyTheme();
+}
+document.getElementById('set-start').addEventListener('change',(e)=>{
+  DATA.settings.startDate = e.target.value || todayStr();
+  autosave(); renderDashboard(); renderSummaryPanel();
+});
+document.querySelectorAll('.wkstart').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.wkstart').forEach(x=>x.setAttribute('aria-pressed','false')); b.setAttribute('aria-pressed','true');
+  DATA.settings.weekStartsOnMonday = (b.dataset.val==='mon');
+  autosave(); renderDashboard(); renderLogPanel(); renderSummaryPanel();
+}));
+document.querySelectorAll('.units').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.units').forEach(x=>x.setAttribute('aria-pressed','false')); b.setAttribute('aria-pressed','true');
+  DATA.settings.unitIsImperial = (b.dataset.val==='imperial');
+  autosave(); renderDashboard(); renderLogPanel(); renderProgressPanel();
+}));
+document.querySelectorAll('.theme').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.theme').forEach(x=>x.setAttribute('aria-pressed','false')); b.setAttribute('aria-pressed','true');
+  DATA.settings.accentTheme = b.dataset.val;
+  autosave(); applyTheme();
+}));
+function applyTheme(){
+  document.body.setAttribute('data-theme', DATA.settings.accentTheme==='plum-teal'?'plum-teal':'');
+}
+
+/* ---------- Save to file / Load from file / Reset ---------- */
+document.getElementById('btn-save-file').addEventListener('click',()=>{
+  const blob = new Blob([JSON.stringify(DATA,null,2)], {type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`hundredday-export-${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(a.href);
+  showToast('Exported .json');
+});
+document.getElementById('file-input').addEventListener('change',async (e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const text=await f.text(); const incoming=JSON.parse(text);
+    validateData(incoming);
+    const merge = confirm('Merge with existing data? Click "Cancel" to replace.');
+    if(merge){
+      // merge days (incoming overwrites), workouts concat unique by id, settings incoming overwrites
+      DATA.settings = {...DATA.settings, ...incoming.settings};
+      DATA.days = {...DATA.days, ...incoming.days};
+      const ids = new Set(DATA.workouts.map(w=>w.id));
+      incoming.workouts.forEach(w=>{ if(!ids.has(w.id)){ DATA.workouts.push(w); ids.add(w.id);} });
+    }else{
+      DATA = incoming;
+    }
+    autosave();
+    renderDashboard(); renderLogPanel(); renderProgressPanel(); renderSummaryPanel(); renderSettingsPanel();
+    showToast('Import complete');
+  }catch(err){
+    console.error(err); showToast('Import failed: invalid file');
+  } finally { e.target.value=''; }
+});
+function validateData(d){
+  if(!d || typeof d!=='object') throw new Error('bad');
+  if(!d.settings || !d.days || !d.workouts) throw new Error('bad');
+  // spot checks
+  if(typeof d.settings.startDate!=='string') throw new Error('bad settings');
+  if(!Array.isArray(d.workouts)) throw new Error('bad workouts');
+}
+
+document.getElementById('btn-reset').addEventListener('click',()=>{
+  if(!confirm('Reset the entire 100-day challenge? This clears logs/workouts.')) return;
+  DATA.days={}; DATA.workouts=[]; DATA.settings.startDate=todayStr(); DATA.settings.lastRandomPromptIndex=-1;
+  autosave(); renderDashboard(); renderLogPanel(); renderProgressPanel(); renderSummaryPanel(); renderSettingsPanel();
+  showToast('Challenge reset');
+});
+
+/* ---------- Init ---------- */
+function init(){
+  initData();
+  renderDashboard();
+  renderLogPanel();
+  renderProgressPanel();
+  renderSummaryPanel();
+  renderSettingsPanel();
+  // High-DPI canvas scaling
+  [document.getElementById('chart-weight'), document.getElementById('chart-wo')].forEach(scaleCanvas);
+  window.addEventListener('resize',()=>[document.getElementById('chart-weight'), document.getElementById('chart-wo')].forEach(c=>{scaleCanvas(c); renderProgressPanel();}));
+}
+function scaleCanvas(canvas){
+  const ratio = window.devicePixelRatio||1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.max(600, rect.width*ratio);
+  canvas.height = canvas.height*ratio/canvas.height * canvas.height; // keep explicit height attribute scaling
+  const ctx=canvas.getContext('2d'); ctx.scale(ratio, ratio);
+}
+
+init();
+</script>
+  <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js').catch(console.error);
+    });
+  }
+  </script>
+</body>
+</html>
